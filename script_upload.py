@@ -2,6 +2,7 @@ from telethon import TelegramClient
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from FastTelethonhelper import fast_upload
 
 # Load the environment variables from the .env file
 load_dotenv()
@@ -10,13 +11,6 @@ load_dotenv()
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
 target_channel = int(os.getenv("TELEGRAM_CHANNEL"))
-#Define your target channel here
-# Use the string username for public channels:
-# TELEGRAM_CHANNEL = @my_awesome_channel 
-# OR use the integer ID for private channels (uncomment line below if private):
-# Take the number in the middle (1827364519), put -100 in front of it, and convert it to an integer.
-# Your Channel ID: -1001827364519
-# TELEGRAM_CHANNEL = -1001827364519
 
 # Fail early if environment variables are missing
 if not api_id or not api_hash:
@@ -24,25 +18,34 @@ if not api_id or not api_hash:
 
 client = TelegramClient("session_name", api_id, api_hash)
 
-def upload_progress(current, total):
-    print(f"Uploading... {current * 100 / total:.2f}%", end='\r')
+# --- THE FIX: The Dummy Message Class ---
+class ConsoleProgressBar:
+    def __init__(self):
+        self.id = 1 # Dummy ID just in case the library checks for it
+        
+    async def edit(self, text):
+        # The library sends text formatted for Telegram (with newlines and markdown).
+        # We clean it up and print it cleanly on a single line in your terminal.
+        clean_text = text.replace('\n', ' | ').replace('`', '').replace('*', '')
+        
+        # \r forces it to overwrite the same line. The extra spaces ensure clean overwrites.
+        print(f"\r{clean_text}                                        ", end="", flush=True)
+
+# Instantiate our fake message object
+dummy_msg = ConsoleProgressBar()
+
 
 async def main():
-    # Gather and sort all .mkv files in the current folder 
-    # Sorting ensures episodes upload in the correct numerical order!
-    mkv_files = sorted([f for f in Path("./telegram").iterdir() if f.is_file() and f.suffix == ".mp4"])
+    mp4_files = sorted([f for f in Path("./telegram").iterdir() if f.is_file() and f.suffix == ".mp4"])
     
-    if not mkv_files:
+    if not mp4_files:
         print("❌ No .mp4 files found in the current directory.")
         return
 
     count = 1
     season_text = "Season 1 Episode"
 
-    # The Single Combined Loop
-    for item in mkv_files:
-        # 1. Prepare the text message format
-        # Using \n creates a new line in the Telegram message
+    for item in mp4_files:
         message_to_send = (
             "==============================================================\n"
             f"{season_text} {count}\n"
@@ -52,23 +55,33 @@ async def main():
         
         print(f"\n--- Starting process for: {item.name} ---")
         
-        # 2. Send the text message first
         await client.send_message(target_channel, message_to_send)
         print("✅ Text message sent.")
         
-        # 3. Upload the actual video file as a streamable video
-        # Convert the Path object 'item' to a string for Telethon
-        await client.send_file(
-            target_channel,
+        print("🚀 Uploading video using fast parallel chunks...")
+        
+        # 3. Upload chunks using our trick!
+        uploaded_file = await fast_upload(
+            client, 
             str(item), 
-            supports_streaming=True,          # Tells Telegram you can stream it
-            video_note=False,                 # Ensures it's a standard video, not a circle video
-            progress_callback=upload_progress
+            reply=dummy_msg,   # <-- Trick the library to use our terminal class!
+            name=item.name
+            # Note: We completely removed 'progress_bar_function' so it uses the 
+            # library's built-in ETA and speed calculations.
         )
         
-        print(f"\n✅ Successfully uploaded video: {item.name}")
+        # Ensure we jump to a new line after the progress bar finishes
+        print("\n")
         
-        # Increment the episode counter for the next loop
+        # 4. Post the completed chunks as a playable video
+        await client.send_file(
+            target_channel,
+            uploaded_file, 
+            supports_streaming=True
+        )
+        
+        print(f"✅ Successfully uploaded video: {item.name}")
+        
         count += 1
 
 with client:
