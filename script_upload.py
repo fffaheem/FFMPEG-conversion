@@ -1,5 +1,3 @@
-#Use to upload message, mkv and then matching mp4
-
 import os
 from queue import Empty
 import subprocess
@@ -13,10 +11,11 @@ from telethon import TelegramClient, utils
 # Load the environment variables from the .env file
 load_dotenv()
 
-FOLDER_NAME = "./telegram-TBBT-S04"
-MKV_FOLDER_NAME = "./TBBT-S04"
-season_text = "S04"
+FOLDER_NAME = "./telegram-TBBT-S06"
+MKV_FOLDER_NAME = "./TBBT-S06"
+season_text = "S06E"
 count_start = 1
+count_end = -1 #-1 means complete to the end
 
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
@@ -78,6 +77,11 @@ async def main():
         if count < count_start:
             count += 1
             continue
+            
+        if count_end != -1 and count > count_end:
+            count += 1
+            break
+        
         # Start clock for this specific loop iteration (one single pass)
         pass_start_time = time.time()
         
@@ -86,7 +90,7 @@ async def main():
 
         message_to_send = (
             "==============================================================\n"
-            f"{season_text}E{count:02d} - {title}\n"
+            f"{season_text}{count:02d} - {title}\n"
             "⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇⬇\n"
             "=============================================================="
         )
