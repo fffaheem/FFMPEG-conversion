@@ -9,7 +9,10 @@ It needs another script
 check_english_in_PGS.py
 
 Now it works for anime as well
+also file type can be mp4
+can change font size as well
 '''
+
 
 import subprocess
 import re
@@ -22,15 +25,26 @@ from check_english_in_PGS import is_pgs_english
 # =================================================================
 # USER CONFIGURATION
 # =================================================================
-INPUT_FOLDER = "./TBBT-S06"
-OUTPUT_FOLDER = "./telegram-TBBT-S06"
+INPUT_FOLDER = "./ATLA and TLOK/Book 1 -  Water (2005)"
+OUTPUT_FOLDER = "./ATLA and TLOK/Telegram-Book-1"
 count_start = 1
 count_end = -1 #-1 means complete to the end
+
+VIDEO_TYPE = "MP4"  # Set to "MKV" or "MP4"
+
 # Set to True for Anime (10-bit HEVC, Audio Copy, Centered Subs)
 # Set to False for TV/Movies (8-bit H264, AAC Stereo, Standard Subs)
 ANIME = False  
 
-USE_INBUILT_SUBS = True  # True = Extract from MKV, False = Use external .srt or .ass
+USE_INBUILT_SUBS = True  # True = Extract from MKV/MP4, False = Use external .srt or .ass
+
+# --- MANUAL SUBTITLE CONTROLS ---
+# Note: FFmpeg draws these on a tiny invisible canvas before scaling up to your video.
+# 10 to 14 is usually standard. 22 will be extremely large.
+SUBTITLE_FONT_SIZE = 16
+
+# Controls how high off the bottom of the screen the text sits
+SUBTITLE_MARGIN_V = 15  
 
 # Common English stop words for language detection heuristic
 ENGLISH_STOP_WORDS = {"the", "and", "you", "that", "was", "for", "on", "are", "with", "his", 
@@ -52,10 +66,10 @@ def get_video_duration(input_file):
         sys.exit(1)
 
 def get_default_audio_relative_index(video_path):
-    """Finds which audio track is flagged as 'default' in the MKV metadata."""
+    """Finds which audio track is flagged as 'default' in the metadata."""
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "a",
-        "-show_entries", "stream_disposition=default", # FIX: explicitly request disposition section
+        "-show_entries", "stream_disposition=default", 
         "-of", "json", str(video_path)
     ]
     try:
@@ -96,7 +110,6 @@ def get_english_subtitle_info(video_path, preferred_idx=None):
     """Dynamically finds the stream index and codec type of the first VALID English track."""
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "s",
-        # FIX: Changed comma to colon -> :stream_tags:stream_disposition
         "-show_entries", "stream=index,codec_name:stream_tags:stream_disposition",
         "-of", "json", str(video_path),
     ]
@@ -137,10 +150,6 @@ def get_english_subtitle_info(video_path, preferred_idx=None):
 
         print(f"No explicitly tagged English track found for {video_path.name}. Inspecting track content...")
         
-        # SMART SORTING: 
-        # 1. Check the preferred_idx (memory from last episode) FIRST
-        # 2. Check the MKV "Default" subtitle track SECOND
-        # 3. Check everything else.
         candidate_tracks.sort(key=lambda x: (
             x["relative_idx"] != preferred_idx, 
             not x["is_default"]
@@ -177,14 +186,14 @@ def burn_subtitles_nvenc(input_file, output_file, subtitle_inbuilt=False, subtit
     print(f"\nAnalyzing {input_file.name}...")
     total_duration = get_video_duration(input_file)
     
-    # Grab the true default audio track index
     audio_idx = get_default_audio_relative_index(input_file)
     print(f"Detected Default Audio Track: {audio_idx}")
     
     input_str_safe = escape_ffmpeg_path(input_file)
     sub_str_safe = escape_ffmpeg_path(subtitle_file) if subtitle_file else ""
 
-    premium_style = "Fontname=Arial,Fontsize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=25"
+    # Inject the manual variables from the top of the script
+    premium_style = f"Fontname=Arial,Fontsize={SUBTITLE_FONT_SIZE},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV={SUBTITLE_MARGIN_V}"
     scale_filter = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
 
     ffmpeg_cmd = ['ffmpeg', '-i', str(input_file)]
@@ -197,7 +206,6 @@ def burn_subtitles_nvenc(input_file, output_file, subtitle_inbuilt=False, subtit
         
         if codec_name in ['hdmv_pgs_subtitle', 'dvd_subtitle', 'pgs', 'dvdsub']:
             print(f"Burning in INBUILT IMAGE subtitle track (Index: {track_index}, Codec: {codec_name})...")
-            # If Anime, center the cropped subtitle image. If TV, align to 0:0.
             if ANIME:
                 filter_complex = f"[0:v:0][0:s:{track_index}]overlay=x=(main_w-overlay_w)/2[v_out]"
             else:
@@ -274,14 +282,16 @@ if __name__ == "__main__":
         print(f"Error: The input folder '{INPUT_FOLDER}' does not exist.")
         sys.exit(1)
 
-    mkv_files = list(input_dir.glob("*.mkv"))
-    if not mkv_files:
-        print(f"No .mkv files found in '{INPUT_FOLDER}'.")
+    file_extension = f"*.{VIDEO_TYPE.lower()}"
+    video_files = list(input_dir.glob(file_extension))
+    
+    if not video_files:
+        print(f"No {file_extension} files found in '{INPUT_FOLDER}'.")
         sys.exit(0)
 
     last_successful_track = None 
 
-    for video in mkv_files:
+    for video in video_files:
         if count < count_start:
             count += 1
             continue
