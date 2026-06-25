@@ -1,0 +1,6 @@
+1) change Name
+2) script_burn 
+    it'll give file which are more than 2gb 
+3) compress_and_burn.
+    to burn that file which were more than 2gb
+4) upload
